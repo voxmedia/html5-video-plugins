@@ -3,6 +3,12 @@
  * version: 0.1
  */
 
+require("../../../html5-common/js/utils/InitModules/InitOO.js");
+require("../../../html5-common/js/utils/InitModules/InitOOUnderscore.js");
+require("../../../html5-common/js/utils/InitModules/InitOOHazmat.js");
+require("../../../html5-common/js/utils/constants.js");
+require("../../../html5-common/js/utils/environment.js");
+
 (function(_, $) {
   var pluginName = "ooyalaHtml5VideoTech";
   var currentInstances = 0;
@@ -12,7 +18,9 @@
    * @classdesc Factory for creating video player objects that use HTML5 video tags
    * @property {string} name The name of the plugin
    * @property {boolean} ready The readiness of the plugin for use.  True if elements can be created.
-   * @property {object} encodings An array of supported encoding types (ex. hls, mp4)
+   * @property {object} encodings An array of supported encoding types (ex. OO.VIDEO.ENCODING.MP4)
+   * @property {object} features An array of supported features (ex. OO.VIDEO.FEATURE.CLOSED_CAPTIONS)
+   * @property {string} technology The core video technology (ex. OO.VIDEO.TECHNOLOGY.HTML5)
    */
   var OoyalaVideoFactory = function() {
     this.name = pluginName;
@@ -20,17 +28,22 @@
     // This module defaults to ready because no setup or external loading is required
     this.ready = true;
 
+    this.features = [ OO.VIDEO.FEATURE.CLOSED_CAPTIONS,
+                      OO.VIDEO.FEATURE.VIDEO_OBJECT_OPEN ];
+    this.technology = OO.VIDEO.TECHNOLOGY.HTML5;
+
     // Determine supported encodings
     var getSupportedEncodings = function() {
       var videoElement = document.createElement("video");
-      var list = ["mp4"];
-      if (!Platform.isSafari) {
-        list.push("webm");
+      var list = [OO.VIDEO.ENCODING.MP4];
+      if (!OO.isSafari) {
+        list.push(OO.VIDEO.ENCODING.WEBM);
       }
       if (!!videoElement.canPlayType("application/vnd.apple.mpegurl") ||
           !!videoElement.canPlayType("application/x-mpegURL")) {
-        list.push("hls");
+        list.push(OO.VIDEO.ENCODING.HLS);
       }
+
       return list;
     };
     this.encodings = getSupportedEncodings();
@@ -55,21 +68,24 @@
       video.attr("id", domId);
       video.attr("preload", "none");
 
-      // require the site to setup CORS correctly to enable track url and src url to come from different domains
-      // Temporarily remove this.  When we implement closed captions we need to optionally add this back in.
-      // It should not be used for ad videos.  It should be used for the main video.
-      //video.attr("crossorigin", "anonymous");
       video.css(css);
 
       // enable airplay for iOS
       // http://developer.apple.com/library/safari/#documentation/AudioVideo/Conceptual/AirPlayGuide/OptingInorOutofAirPlay/OptingInorOutofAirPlay.html
-      if (Platform.isIos) {
+      if (OO.isIos) {
         video.attr("x-webkit-airplay", "allow");
       }
 
-      element = new OoyalaVideoWrapper(domId, video[0]);
+      // Set initial container dimension
+      var dimension = {
+        width: parentContainer.width(),
+        height: parentContainer.height()
+      };
+
+      var element = new OoyalaVideoWrapper(domId, video[0], dimension);
       currentInstances++;
       element.controller = controller;
+      controller.notify(controller.EVENTS.CAN_PLAY);
 
       // TODO: Wait for loadstart before calling this?
       element.subscribeAllEvents();
@@ -77,7 +93,7 @@
       parentContainer.append(video);
 
       // On Android, we need to "activate" the video on a click so we can control it with JS later on mobile
-      if (Platform.isAndroid) {
+      if (OO.isAndroid) {
         element.play();
         element.pause();
       }
@@ -102,9 +118,9 @@
      * @property OoyalaVideoFactory#maxSupportedElements
      */
     this.maxSupportedElements = (function() {
-      var iosRequireSingleElement = Platform.isIos;
-      var androidRequireSingleElement = Platform.isAndroid &&
-                                        (!Platform.isAndroid4Plus || Platform.chromeMajorVersion < 40);
+      var iosRequireSingleElement = OO.isIos;
+      var androidRequireSingleElement = OO.isAndroid &&
+                                        (!Platform.isAndroid4Plus || OO.chromeMajorVersion < 40);
       return (iosRequireSingleElement || androidRequireSingleElement) ? 1 : -1;
     })();
   };
@@ -114,11 +130,12 @@
    * @classdesc Player object that wraps HTML5 video tags
    * @param {string} domId The dom id of the video player element
    * @param {object} video The core video object to wrap
+   * @param {object} dimension JSON object specifying player container's initial width and height
    * @property {object} controller A reference to the Ooyala Video Tech Controller
    * @property {boolean} disableNativeSeek When true, the plugin should supress or undo seeks that come from
    *                                       native video controls
    */
-  var OoyalaVideoWrapper = function(domId, video) {
+  var OoyalaVideoWrapper = function(domId, video, dimension) {
     this.controller = {};
     this.disableNativeSeek = false;
 
@@ -127,15 +144,27 @@
     var videoEnded = false;
     var listeners = {};
     var loaded = false;
+    var canPlay = false;
     var hasPlayed = false;
     var queuedSeekTime = null;
     var playQueued = false;
     var isSeeking = false;
     var currentTime = 0;
     var isM3u8 = false;
+    var TRACK_CLASS = "track_cc";
+    var firstPlay = true;
+    var playerDimension = dimension;
+    var videoDimension = {height: 0, width: 0};
 
-    // TODO: These are unused currently
-    var _readyToPlay = false; // should be set to true on canplay event
+    // iPad CSS constants
+    var IPAD_CSS_DEFAULT = {
+      "width":"",
+      "height":"",
+      "left":"50%",
+      "top":"50%",
+      "-webkit-transform":"translate(-50%,-50%)",
+      "visibility":"visible"
+    };
 
     /************************************************************************************/
     // External Methods that Video Controller or Factory call
@@ -152,6 +181,7 @@
                     "progress": _.bind(raiseProgress, this),
                     "error": _.bind(raiseErrorEvent, this),
                     "stalled": _.bind(raiseStalledEvent, this),
+                    "canplay": _.bind(raiseCanPlay, this),
                     "canplaythrough": _.bind(raiseCanPlayThrough, this),
                     "playing": _.bind(raisePlayingEvent, this),
                     "waiting": _.bind(raiseWaitingEvent, this),
@@ -177,10 +207,10 @@
     /**
      * Unsubscribes all events from the video element.
      * This is called by the destroy function.
-     * @public
+     * @private
      * @method OoyalaVideoWrapper#unsubscribeAllEvents
      */
-    this.unsubscribeAllEvents = function() {
+    var unsubscribeAllEvents = function() {
       _.each(listeners, function(v, i) { $(_video).off(i, v); }, this);
     };
 
@@ -200,19 +230,14 @@
         _currentUrl = url || "";
 
         // bust the chrome caching bug
-        if (_currentUrl.length > 0 && Platform.isChrome) {
+        if (_currentUrl.length > 0 && OO.isChrome) {
           _currentUrl = _currentUrl + (/\?/.test(_currentUrl) ? "&" : "?") + "_=" + getRandomString();
         }
 
         isM3u8 = (_currentUrl.toLowerCase().indexOf("m3u8") > 0);
-        _readyToPlay = false;
         urlChanged = true;
         resetStreamData();
         _video.src = _currentUrl;
-      }
-
-      if (_.isEmpty(url)) {
-        this.controller.notify(this.controller.EVENTS.ERROR, { errorcode: 0 }); //0 -> no stream
       }
 
       return urlChanged;
@@ -220,9 +245,11 @@
 
     var resetStreamData = _.bind(function() {
       playQueued = false;
+      canPlay = false;
       hasPlayed = false;
       loaded = false;
       videoEnded = false;
+      videoDimension = {height: 0, width: 0};
     }, this);
 
     /**
@@ -233,15 +260,17 @@
      */
     this.load = function(rewind) {
       if (loaded && !rewind) return;
-      if (!!rewind) {
+      if (!!rewind) {  // consider adding loaded &&
         try {
-          if (Platform.isIos && Platform.iosMajorVersion == 8) {
+          if (OO.isIos && OO.iosMajorVersion == 8) {
             // On iOS, wait for durationChange before setting currenttime
             $(_video).on("durationchange", _.bind(function() {
                                                                _video.currentTime = 0;
+                                                               currentTime = 0;
                                                              }, this));
           } else {
             _video.currentTime = 0;
+            currentTime = 0;
           }
           _video.pause();
         } catch (ex) {
@@ -313,8 +342,15 @@
      * @param {number} volume A number between 0 and 1 indicating the desired volume percentage
      */
     this.setVolume = function(volume) {
+      var resolvedVolume = volume;
+      if (resolvedVolume < 0) {
+        resolvedVolume = 0;
+      } else if (resolvedVolume > 1) {
+        resolvedVolume = 1;
+      }
+
       //  TODO check if we need to capture any exception here. ios device will not allow volume set.
-      _video.volume = volume;
+      _video.volume = resolvedVolume;
     };
 
     /**
@@ -335,6 +371,7 @@
      */
     this.applyCss = function(css) {
       $(_video).css(css);
+      setVideoCentering();
     };
 
     /**
@@ -345,11 +382,85 @@
     this.destroy = function() {
       _video.pause();
       _video.src = '';
-      this.unsubscribeAllEvents();
+      unsubscribeAllEvents();
       $(_video).remove();
       currentInstances--;
     };
 
+    /**
+     * Sets the closed captions on the video element.
+     * @public
+     * @method OoyalaVideoWrapper#setClosedCaptions
+     * @param {string} language The language of the closed captions. If null, the current closed captions will be removed.
+     * @param {object} closedCaptions The closedCaptions object
+     * @param {object} params The params to set with closed captions
+     */
+    this.setClosedCaptions = function(language, closedCaptions, params) {
+      $(_video).find('.' + TRACK_CLASS).remove();
+      if (language == null) return;
+
+      // The textTrack added by QuickTime will not be removed by removing track element
+      // But the textTrack that we added by adding track element will be removed by removing track element.
+      // This first check is to check for live CC
+      if (OO.isSafari && _video.textTracks.length !== 0) {
+        for (var i = 0; i < _video.textTracks.length; i++) {
+          if (_video.textTracks[i].language === language ||
+              (language == "CC" && _video.textTracks[i].kind === "captions")) {
+            var mode = (!!params && params.mode) || 'showing';
+            _video.textTracks[i].mode = mode;
+          } else {
+           _video.textTracks[i].mode = 'disabled';
+          }
+        }
+      } else {
+        var captionsFormat = "closed_captions_vtt";
+        if (closedCaptions[captionsFormat] && closedCaptions[captionsFormat][language]) {
+          var captions = closedCaptions[captionsFormat][language];
+          var label = captions.name;
+          var src = captions.url;
+          var mode = (!!params && params.mode) || 'showing';
+
+          $(_video).append("<track class='" + TRACK_CLASS + "' kind='subtitles' label='" + label + "' src='" + src + "' srclang='" + language + "' default>");
+
+          _.delay(function() {
+            _video.textTracks[0].mode = mode;
+            if (OO.isFirefox) {
+              for (var i=0; i < _video.textTracks[0].cues.length; i++) {
+                _video.textTracks[0].cues[i].line = 15;
+              }
+            }
+          }, 100);
+        }
+      }
+    };
+
+    /**
+     * Sets the closed captions mode on the video element.
+     * @public
+     * @method OoyalaVideoWrapper#setClosedCaptionsMode
+     * @param {string} mode The mode to set the text tracks element. One of ("disabled", "hidden", "showing").
+     */
+    this.setClosedCaptionsMode = function(mode) {
+      if (_video.textTracks) {
+        for (var i = 0; i < _video.textTracks.length; i++) {
+          _video.textTracks[i].mode = mode;
+        }
+      }
+    };
+
+    /**
+     * Sets the crossorigin attribute on the video element.
+     * @public
+     * @method OoyalaVideoWrapper#setCrossorigin
+     * @param {string} crossorigin The value to set the crossorigin attribute. Will remove crossorigin attribute if null.
+     */
+    this.setCrossorigin = function(crossorigin) {
+      if (crossorigin) {
+        $(_video).attr("crossorigin", crossorigin);
+      } else {
+        $(_video).removeAttr("crossorigin");
+      }
+    };
 
     // **********************************************************************************/
     // Event callback methods
@@ -362,6 +473,7 @@
      */
     var onLoadStart = function() {
       _currentUrl = _video.src;
+      firstPlay = true;
       videoEnded = false;
     };
 
@@ -384,8 +496,8 @@
                              { "currentTime": event.target.currentTime,
                                "duration": resolveDuration(event.target.duration),
                                "buffer": buffer,
-                               "seekRange": getSafeSeekRange(event.target.seekable),
-                               "url": event.target.src });
+                               "seekRange": getSafeSeekRange(event.target.seekable)
+                             });
     };
 
     /**
@@ -407,11 +519,20 @@
      */
     var raiseStalledEvent = function(event) {
       // Fix multiple video tag error in iPad
-      if (Platform.isIpad && event.target.currentTime === 0) {
+      if (OO.isIpad && event.target.currentTime === 0) {
         _video.pause();
       }
 
       this.controller.notify(this.controller.EVENTS.STALLED);
+    };
+
+    /**
+     * HTML5 video browser can start playing the media. Sets canPlay flag to TRUE
+     * @private
+     * @method OoyalaVideoWrapper#raiseCanPlay
+     */
+    var raiseCanPlay = function() {
+      canPlay = true;
     };
 
     /**
@@ -430,6 +551,18 @@
      */
     var raisePlayingEvent = function() {
       this.controller.notify(this.controller.EVENTS.PLAYING);
+      firstPlay = false;
+
+      //Check for live closed captions and notify controller
+      if (firstPlay && _video.textTracks && _video.textTracks.length > 0) {
+        var languages = [];
+        for (var i = 0; i < _video.textTracks.length; i++) {
+          if (_video.textTracks[i].kind === "captions") {
+            this.controller.notify(this.controller.EVENTS.CAPTIONS_FOUND_ON_PLAYING);
+          }
+        }
+      }
+      setVideoCentering();
     };
 
     /**
@@ -480,7 +613,7 @@
      * @method OoyalaVideoWrapper#raiseEndedEvent
      */
     var raiseEndedEvent = _.bind(function(event) {
-      if (!_video.ended && Platform.isIos) {
+      if (!_video.ended && OO.isIos) {
         // iOS raises ended events sometimes when a new stream is played in the same video element
         // Prevent this faulty event from making it to the player message bus
         // Desktop Safari, however, will raise this event while ended == false and we shouldn't block it.
@@ -517,6 +650,9 @@
 
       // iOS has issues seeking so if we queue a seek handle it here
       dequeueSeek();
+
+      // iPad safari has video centering issue. Unfortunately, HTML5 does not have bitrate change event.
+      setVideoCentering();
 
       forceEndOnTimeupdateIfRequired(event);
     };
@@ -597,6 +733,36 @@
       return Math.random().toString(36).substring(7);
     };
 
+     /**
+     * Fix issue with iPad safari browser not properly centering the video
+     * @private
+     * @method OoyalaVideoWrapper#setVideoCentering
+     */
+     var setVideoCentering = function() {
+       if (OO.isIpad) {
+        var videoWidth = _video.videoWidth;
+        var videoHeight = _video.videoHeight;
+        var playerWidth = playerDimension.width;
+        var playerHeight = playerDimension.height;
+
+        // check if video stream dimension was changed, then re-apply video css
+        if (videoWidth != videoDimension.width || videoHeight != videoDimension.height) {
+          var css = IPAD_CSS_DEFAULT;
+          if (videoHeight/videoWidth > playerHeight/playerWidth) {
+            css.width = "";
+            css.height = "100%";
+          } else {
+            css.width = "100%";
+            css.height = "";
+          }
+          $(_video).css(css);
+
+          videoDimension.width = videoWidth;
+          videoDimension.height = videoHeight;
+        }
+      }
+     };
+
     /**
      * If any plays are queued up, execute them.
      * @private
@@ -662,7 +828,7 @@
       var safeTime = time >= duration ? duration - 0.01 : (time < 0 ? 0 : time);
 
       // iPad with 6.1 has an interesting bug that causes the video to break if seeking exactly to zero
-      if (Platform.isIpad && safeTime < 0.1) {
+      if (OO.isIpad && safeTime < 0.1) {
         safeTime = 0.1;
       }
       return safeTime;
@@ -677,6 +843,10 @@
      * @returns {?number} The seek-to position, or null if seeking is not possible
      */
     var getSafeSeekTimeIfPossible = function(_video, time) {
+      if (typeof time !== "number") {
+        return null;
+      }
+
       var range = getSafeSeekRange(_video.seekable);
       if (range.start === 0 && range.end === 0) {
         return null;
@@ -720,17 +890,31 @@
       if (event.target.buffered && event.target.buffered.length > 0) {
         buffer = event.target.buffered.end(0); // in sec;
       }
+
+      // durationchange event raises the currentTime as a string
+      var resolvedTime = (event && event.target) ? event.target.currentTime : null;
+      if (resolvedTime && (typeof resolvedTime !== "number")) {
+        resolvedTime = Number(resolvedTime);
+      }
+
+      // Safety against accessing seekable before SAFARI browser canPlay media
+      if (OO.isSafari && !canPlay) {
+        var seekable = getSafeSeekRange(null);
+      } else {
+        var seekable = getSafeSeekRange(event.target.seekable);
+      }
+
       this.controller.notify(eventname,
-                             { "currentTime": event.target.currentTime,
+                             { "currentTime": resolvedTime,
                                "duration": resolveDuration(event.target.duration),
                                "buffer": buffer,
-                               "seekRange": getSafeSeekRange(event.target.seekable) });
+                               "seekRange": seekable });
     }, this);
 
     /**
      * Resolves the duration of the video to a valid value.
      * @private
-     * @method OoyalaVideoWrapper#raisePlayhead
+     * @method OoyalaVideoWrapper#resolveDuration
      * @param {number} duration The reported duration of the video in seconds
      * @returns {number} The resolved duration of the video in seconds
      */
@@ -749,7 +933,7 @@
      * @method OoyalaVideoWrapper#forceEndOnPausedIfRequired
      */
     var forceEndOnPausedIfRequired = _.bind(function() {
-      if (Platform.isSafari && !Platform.isIos) {
+      if (OO.isSafari && !OO.isIos) {
         if (_video.ended) {
           console.log("VTC_OO: Force through the end of stream for Safari", _video.currentSrc,
                       _video.duration, _video.currentTime);
@@ -785,76 +969,6 @@
    */
   var Platform = {
     /**
-     * Checks if the system is running on iOS.
-     * @private
-     * @method Platform#isIos
-     * @returns {boolean} True if the system is running on iOS
-     */
-    isIos: (function() {
-      var platform = window.navigator.platform;
-      return !!(platform.match(/iPhone/) || platform.match(/iPad/) || platform.match(/iPod/));
-    })(),
-
-    /**
-     * Checks if the system is an iPad
-     * @private
-     * @method Platform#isIpad
-     * @returns {boolean} True if the system is an Ipad
-     */
-    isIpad: (function() {
-      return !!window.navigator.platform.match(/iPad/);
-    })(),
-
-    /**
-     * Checks if the player is running in Chrome.
-     * @private
-     * @method Platform#isChrome
-     * @returns {boolean} True if the player is running in chrome
-     */
-    isChrome: (function() {
-      return !!window.navigator.userAgent.match(/Chrome/);
-    })(),
-
-    /**
-     * Checks if the player is running in Safari.
-     * @private
-     * @method Platform#isSafari
-     * @returns {boolean} True if the player is running in Safari
-     */
-    isSafari: (function() {
-      return (!!window.navigator.userAgent.match(/AppleWebKit/) &&
-              !window.navigator.userAgent.match(/Chrome/));
-    })(),
-
-    /**
-     * Gets the iOS major version.
-     * @private
-     * @method Platform#iosMajorVersion
-     * @returns {?number} The iOS major version; null if the system is not running iOS
-     */
-    iosMajorVersion: (function(){
-      try {
-        if (window.navigator.userAgent.match(/(iPad|iPhone|iPod)/)) {
-          return parseInt(window.navigator.userAgent.match(/OS (\d+)/)[1], 10);
-        } else {
-          return null;
-        }
-      } catch (err) {
-        return null;
-      }
-    })(),
-
-    /**
-     * Checks if the player is running on an Android device.
-     * @private
-     * @method Platform#isAndroid
-     * @returns {boolean} True if the player is running on an Android device
-     */
-    isAndroid: (function(){
-      return !!window.navigator.appVersion.match(/Android/);
-    })(),
-
-    /**
      * Checks if the player is running on an Android device of version 4 or later.
      * @private
      * @method Platform#isAndroid4Plus
@@ -864,20 +978,6 @@
       if (!window.navigator.appVersion.match(/Android/)) return false;
       var device = window.navigator.appVersion.match(/Android [1-9]/) || [];
       return (_.first(device) || "").slice(-1) >= "4";
-    })(),
-
-    /**
-     * Checks if the player is running in Safari.
-     * @private
-     * @method Platform#isSafari
-     * @returns {boolean} True if the player is running in safari
-     */
-    chromeMajorVersion: (function(){
-      try {
-        return parseInt(window.navigator.userAgent.match(/Chrome.([0-9]*)/)[1], 10);
-      } catch(err) {
-        return null;
-      }
     })(),
   };
 

@@ -4,17 +4,26 @@
  * version: 0.1
  */
 
+require("../html5-common/js/utils/InitModules/InitOO.js");
+require("../html5-common/js/utils/InitModules/InitOOUnderscore.js");
+require("../html5-common/js/utils/constants.js");
+
 (function(_, $) {
   /**
    * @class TemplateVideoFactory
    * @classdesc Factory for creating video player objects that use HTML5 video tags.
    * @property {string} name The name of the plugin
    * @property {boolean} ready The readiness of the plugin for use.  True if elements can be created.
-   * @property {object} streams An array of supported encoding types (ex. m3u8, mp4)
+   * @property {object} encodings An array of supported encoding types (ex. OO.VIDEO.ENCODING.MP4)
+   * @property {object} features An array of supported features (ex. OO.VIDEO.FEATURE.CLOSED_CAPTIONS)
+   * @property {string} technology The core video technology (ex. OO.VIDEO.TECHNOLOGY.HTML5)
    */
   var TemplateVideoFactory = function() {
     this.name = "templateVideoTech";
-    this.streams = ["m3u8", "mp4"];
+    this.encodings = [OO.VIDEO.ENCODING.HLS, OO.VIDEO.ENCODING.MP4];
+    this.features = [ OO.VIDEO.FEATURE.CLOSED_CAPTIONS,
+                      OO.VIDEO.FEATURE.VIDEO_OBJECT_OPEN ];
+    this.technology = OO.VIDEO.TECHNOLOGY.HTML5;
 
     // This module defaults to ready because no setup or external loading is required
     this.ready = true;
@@ -45,7 +54,7 @@
      */
     this.destroy = function() {
       this.ready = false;
-      this.streams = [];
+      this.encodings = [];
       this.create = function() {};
     };
 
@@ -57,14 +66,6 @@
      */
     this.maxSupportedElements = -1;
 
-    /**
-     * Returns the number of video elements currently instantiated.
-     * @public
-     * @method TemplateVideoFactory#getCurrentNumberOfInstances
-     * @returns {int} The number of video elements created by this factory that have not been destroyed
-     */
-    this.getCurrentNumberOfInstances = function() {
-    };
   };
 
   /**
@@ -220,6 +221,34 @@
       // Remove the element
     };
 
+    /**
+     * Sets the closed captions on the video element.
+     * @public
+     * @method OoyalaVideoWrapper#setClosedCaptions
+     * @param {string} language The language of the closed captions. Set to null to remove captions.
+     * @param {object} closedCaptions The closedCaptions object
+     * @param {object} params The params to set with closed captions
+     */
+    this.setClosedCaptions = function(language, closedCaptions, params) {
+    };
+
+    /**
+     * Sets the closed captions mode on the video element.
+     * @public
+     * @method OoyalaVideoWrapper#setClosedCaptionsMode
+     * @param {string} mode The mode to set the text tracks element. One of ("disabled", "hidden", "showing").
+     */
+    this.setClosedCaptionsMode = function(mode) {
+    };
+
+    /**
+     * Sets the crossorigin attribute on the video element.
+     * @public
+     * @method TemplateVideoWrapper#setCrossorigin
+     * @param {string} crossorigin The value to set the crossorigin attribute.
+     */
+    this.setCrossorigin = function(crossorigin) {
+    };
 
     // **********************************************************************************/
     // Example callback methods
