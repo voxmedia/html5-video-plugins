@@ -13,11 +13,18 @@ var gulp = require('gulp'),
 
 var path = {
   mainJs: './src/main/js/main_html5.js',
-  bitJs: './src/bit/js/bit_wrapper.js'
+  bitJs: './src/bit/js/bit_wrapper.js',
+  shakaJs: './src/shaka/shaka.js'
 };
 
 var main_html5_fn = function() {
   uglify_fn(path.mainJs);
+}
+
+var shaka_fn = function() {
+  uglify_fn(path.shakaJs);
+  gulp.src(['./src/shaka/shaka-player.compiled.debug.js'])
+    .pipe(gulp.dest('./build'));
 }
 
 var bit_fn = function() {
@@ -60,6 +67,7 @@ gulp.task('init_module', function(callback) {
 gulp.task('build', ['init_module'], function() {
   main_html5_fn();
   bit_fn();
+  shaka_fn();
 });
 
 gulp.task('test', shell.task(['jest --verbose']));
