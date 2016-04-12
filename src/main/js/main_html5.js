@@ -529,11 +529,24 @@ require("../../../html5-common/js/utils/environment.js");
       } else {
         var captionsFormat = "closed_captions_vtt";
         if (closedCaptions && closedCaptions[captionsFormat] && closedCaptions[captionsFormat][language]) {
-          var captions = closedCaptions[captionsFormat][language];
-          var label = captions.name;
-          var src = captions.url;
 
-          $(_video).append("<track class='" + TRACK_CLASS + "' kind='subtitles' label='" + label + "' src='" + src + "' srclang='" + language + "' default>");
+          for(i=0;i<availableLanguages.languages.length;i++)
+          {
+            if(language === availableLanguages.languages[i])
+            {
+              var captions = closedCaptions[captionsFormat][language];
+              var label = captions.name;
+              var src = captions.url;
+
+              $(_video).append("<track class='" + TRACK_CLASS + "' kind='subtitles' label='" + label + "' src='" + src + "' srclang='" + language + "' default>");
+            }
+            else
+            {
+              var labels = availableLanguages.locale[availableLanguages.languages[i]];
+              var source = availableLanguages.url[availableLanguages.languages[i]];
+              $(_video).append("<track class='" + TRACK_CLASS + "' kind='subtitles' label='" + labels + "' src='" + source + "' srclang='" + availableLanguages.languages[i] + "'>");
+            }
+          }
           if (_video.textTracks && _video.textTracks[0]) {
             _video.textTracks[0].mode = captionMode;
             if (captionMode == OO.CONSTANTS.CLOSED_CAPTIONS.HIDDEN) {
