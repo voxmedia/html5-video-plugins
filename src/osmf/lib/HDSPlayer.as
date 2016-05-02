@@ -17,7 +17,26 @@ package
   import flash.text.TextFieldAutoSize;
   import flash.text.TextFormat;
   import flash.utils.Timer;
-  
+  import org.osmf.traits.DRMTrait;
+  import flash.events.*;
+  import org.osmf.events.DRMEvent;
+    import org.osmf.traits.DRMState;
+
+  import flash.events.DRMAuthenticationCompleteEvent; 
+import flash.events.DRMAuthenticationErrorEvent; 
+import flash.events.DRMErrorEvent;   
+import flash.events.DRMStatusEvent; 
+import flash.events.NetStatusEvent; 
+import flash.net.NetConnection; 
+import flash.net.NetStream; 
+import flash.net.NetStreamPlayOptions; 
+import flash.net.drm.AuthenticationMethod; 
+import flash.net.drm.DRMContentData; 
+import flash.net.drm.DRMManager; 
+import flash.net.drm.LoadVoucherSetting; 
+  import flash.net.SharedObject;
+
+
   import org.osmf.events.BufferEvent;
   import org.osmf.events.MediaElementEvent;
   import org.osmf.events.MediaErrorCodes;
@@ -80,6 +99,7 @@ package
     private var _currentBitrate:Number = -1;
     private var _hiddenCaptionFlag:Boolean = false;
     private var _previousCaptionMode:String;
+    private var _authToken:String = "";
     
     /**
      * Constructor
@@ -93,6 +113,39 @@ package
       var externalJavaScriptApi:ExternalJavaScriptAPI = new ExternalJavaScriptAPI(this);
     }
     
+    protected function onDRMStateChangeHandler (evt: DRMEvent): void
+    {
+      switch (evt.drmState) {
+        case DRMState.AUTHENTICATING:
+        ExternalInterface.call("console.log","DRM state authenticate");
+            break;
+        case DRMState.AUTHENTICATION_COMPLETE:
+                ExternalInterface.call("console.log","DRM state AUTHENTICATION_COMPLETE");
+
+            break;
+        case DRMState.AUTHENTICATION_ERROR:
+                ExternalInterface.call("console.log","DRM state AUTHENTICATION_ERROR");
+
+            break;
+        case DRMState.AUTHENTICATION_NEEDED:
+                ExternalInterface.call("console.log","DRM state AUTHENTICATION_NEEDED");
+               _mediaPlayerSprite.mediaPlayer.authenticateWithToken(_authToken); 
+
+
+         //   _mediaPlayerSprite.mediaPlayer.authenticate ("test", "test");
+            break;
+        case DRMState.DRM_SYSTEM_UPDATING:
+                ExternalInterface.call("console.log","DRM state DRM_SYSTEM_UPDATING");
+
+            break;
+        case DRMState.UNINITIALIZED:
+                       _mediaPlayerSprite.mediaPlayer.authenticateWithToken(_authToken); 
+
+                ExternalInterface.call("console.log","DRM state UNINITIALIZED");
+
+            break;
+      }
+    }
     /**
      * Registers the event listners
      * @public
@@ -110,6 +163,9 @@ package
       stage.addEventListener(FullScreenEvent.FULL_SCREEN, resizeListener);
       stage.addEventListener(Event.RESIZE, resizeListener);
       SendToDebugger("events added", "registerListeners");
+    
+      _mediaPlayerSprite.mediaPlayer.addEventListener (DRMEvent.DRM_STATE_CHANGE,
+        onDRMStateChangeHandler)
     }
     
     /**
@@ -307,7 +363,21 @@ package
         case MediaPlayerState.LOADING:
           break;
         case MediaPlayerState.READY:
+          _bitrateIdArray.length = 0;
+          for(var i:int = 0; i < getStreamsCount(); i++)
+          {
+            _bitrateIdArray.push((_mediaPlayerSprite.mediaPlayer.getBitrateForDynamicStreamIndex(i)) + "kbps");
+          }
+
           totalBitratesAvailable();
+          var drmTrait:DRMTrait = _mediaPlayerSprite.mediaPlayer.media.getTrait(MediaTraitType.DRM) as DRMTrait; 
+                             //    _mediaPlayerSprite.mediaPlayer.authenticate("love","love");
+
+          var cookies:String = ExternalInterface.call("function(){ return document.cookie;}()");
+          if (drmTrait != null) 
+          { 
+            drmTrait.authenticateWithToken(_authToken); 
+          } 
           if (_playQueue)
           {
             onVideoPlay(event);
@@ -1023,6 +1093,11 @@ package
     {
       unregisterListeners();
       removeChild(_mediaPlayerSprite); 
+    }
+
+    public function onSetAuthToken(event:DynamicEvent):void
+    {
+      _authToken = (String)(event.args);
     }
 
     /**

@@ -99,6 +99,7 @@ package
       addEventListener("setInitialTime", onSetInitialTime);
       addEventListener("getCurrentTime", onGetCurrentTime);
       addEventListener("destroy", onDestroy);
+      addEventListener("setAuthToken", onSetAuthToken);
       _hdsPlayer.addEventListener(DynamicEvent.PLAY, onFlashEvent);
       _hdsPlayer.addEventListener(DynamicEvent.PLAYING, onFlashEvent);
       _hdsPlayer.addEventListener(DynamicEvent.ENDED, onFlashEvent);
@@ -149,6 +150,8 @@ package
       removeEventListener("setInitialTime", onSetInitialTime);
       removeEventListener("getCurrentTime", onGetCurrentTime);
       removeEventListener("destroy", onDestroy);
+      removeEventListener("setAuthToken", onSetAuthToken);
+
       _hdsPlayer.removeEventListener(DynamicEvent.PLAY, onFlashEvent);
       _hdsPlayer.removeEventListener(DynamicEvent.PLAYING, onFlashEvent);
       _hdsPlayer.removeEventListener(DynamicEvent.ENDED, onFlashEvent);
@@ -180,6 +183,10 @@ package
       sendToJavaScript(eventData);
     }
 
+    private function onSetAuthToken(event:DynamicEvent):void
+    {
+      _hdsPlayer.onSetAuthToken(event);
+    }
     /**
      * Initiates video play functionality through the player
      * @private
@@ -256,6 +263,7 @@ package
     {
       _hdsPlayer.onLoadVideo(event);
     }
+
 
     /**
     * Sets the closed captions for the video playback

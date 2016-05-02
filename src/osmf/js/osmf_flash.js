@@ -276,7 +276,14 @@ require("../../../html5-common/js/utils/constants.js");
      * @param {string} encoding The encoding of video stream
      * @returns {boolean} True or false indicating success
      */
-    this.setVideoUrl = function(url, encoding) {
+    this.setVideoUrl = function(url, encoding, authToken) {  
+      if(authToken!= "")
+      {
+        console.log("###@@@@ shyleen authToken "+authToken);
+      
+        this.callToFlash("setAuthToken("+authToken+")");
+      }
+
       var urlChanged = false;
            newController = this.controller;
 
